@@ -1,0 +1,5 @@
+-- CreateEnum
+CREATE TYPE "CashRole" AS ENUM ('OPERATIONAL', 'DORMANT', 'INVESTED');
+
+-- AlterTable
+ALTER TABLE "Account" ADD COLUMN     "cashRole" "CashRole" NOT NULL DEFAULT 'OPERATIONAL';

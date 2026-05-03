@@ -1,0 +1,216 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  PEA
+  AV
+  LIVRET
+  PER
+  CRYPTO
+  CASH
+  OTHER
+}
+
+/// Rôle du cash sur ce compte. OPERATIONAL = matelas / charges, à laisser
+/// tranquille. DORMANT = du cash qui devrait être investi (PEA en cash, AV à
+/// 0, excédent CC). INVESTED = exposé aux marchés (PEA en ETF, AV en UC, etc.).
+enum CashRole {
+  OPERATIONAL
+  DORMANT
+  INVESTED
+}
+
+enum AssetType {
+  REAL_ESTATE
+  VEHICLE
+  COLLECTIBLE
+  OTHER
+}
+
+model Account {
+  id                String      @id @default(cuid())
+  name              String
+  type              AccountType
+  institution       String
+  cashRole          CashRole    @default(OPERATIONAL)
+  /// Objectif mensuel de versement (DCA). NULL = pas d'objectif.
+  monthlyDcaTarget  Decimal?    @db.Decimal(14, 2)
+  /// Clé du compte côté provider externe (ex. id retourné par woob pour CM).
+  /// Permet le mapping au moment de la sync auto. Null = compte non synchronisé.
+  externalKey       String?     @unique
+  /// Provider qui possède la clé : "creditmutuel", "trade-republic"…
+  externalProvider  String?
+  createdAt         DateTime    @default(now())
+
+  balances     Balance[]
+  transactions Transaction[]
+
+  @@index([type])
+  @@index([externalProvider])
+}
+
+enum SyncStatus {
+  RUNNING
+  OK
+  AUTH_FAILED
+  SCA_REQUIRED
+  ERROR
+}
+
+model SyncLog {
+  id              String     @id @default(cuid())
+  provider        String
+  status          SyncStatus
+  startedAt       DateTime   @default(now())
+  completedAt     DateTime?
+  accountsSynced  Int        @default(0)
+  /// JSON sérialisé de la liste des comptes détectés (matched + unmatched).
+  detected        String?
+  errorCode       String?
+  message         String?
+
+  @@index([provider, startedAt])
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAW
+  FEE
+  INTEREST
+  DIVIDEND
+}
+
+model Transaction {
+  id        String          @id @default(cuid())
+  accountId String
+  date      DateTime
+  type      TransactionType
+  amount    Decimal         @db.Decimal(14, 2)
+  note      String?
+  createdAt DateTime        @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, date])
+  @@index([type, date])
+}
+
+model Balance {
+  id        String   @id @default(cuid())
+  accountId String
+  amount    Decimal  @db.Decimal(14, 2)
+  date      DateTime
+  note      String?
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, date])
+}
+
+model CryptoHolding {
+  id                 String    @id @default(cuid())
+  symbol             String
+  coingeckoId        String
+  quantity           Decimal   @db.Decimal(28, 10)
+  lastUpdated        DateTime  @default(now())
+  /// Dernier prix EUR connu (mis à jour à chaque fetch CoinGecko réussi)
+  lastPriceEUR       Decimal?  @db.Decimal(20, 8)
+  lastPriceFetchedAt DateTime?
+
+  @@unique([coingeckoId])
+}
+
+model Asset {
+  id          String      @id @default(cuid())
+  name        String
+  type        AssetType
+  description String?
+  createdAt   DateTime    @default(now())
+
+  valuations AssetValuation[]
+
+  @@index([type])
+}
+
+model AssetValuation {
+  id      String   @id @default(cuid())
+  assetId String
+  value   Decimal  @db.Decimal(14, 2)
+  date    DateTime
+  note    String?
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, date])
+}
+
+model LiabilityAccount {
+  id               String   @id @default(cuid())
+  name             String
+  remainingBalance Decimal  @db.Decimal(14, 2)
+  date             DateTime
+  note             String?
+  /// Mapping vers le provider externe (ex. clé compte CM woob).
+  /// Comme LiabilityAccount fonctionne en "snapshot" (plusieurs lignes
+  /// par dette, une par mise à jour), seule UNE ligne par dette devrait
+  /// porter l'externalKey ; à la sync on crée un nouveau snapshot et on
+  /// laisse l'externalKey sur l'ancien (le mapping suit l'identité, qui
+  /// est le `name`, pas l'id de la ligne).
+  externalKey      String?  @unique
+  externalProvider String?
+
+  schedule LoanSchedule[]
+
+  @@index([date])
+  @@index([externalProvider])
+}
+
+/// Une ligne d'échéancier d'amortissement. Quand un LiabilityAccount a un
+/// schedule, le solde "current" affiché vient du schedule (capitalBefore de
+/// la 1re échéance future) et non du champ statique remainingBalance.
+model LoanSchedule {
+  id                 String   @id @default(cuid())
+  liabilityAccountId String
+  dueDate            DateTime
+  /// Capital dû avant l'échéance — la valeur affichée comme CRD courant.
+  capitalBefore      Decimal  @db.Decimal(14, 2)
+  /// Part capital de la mensualité.
+  principalPayment   Decimal  @db.Decimal(14, 2)
+  /// Part intérêts.
+  interestPayment    Decimal  @db.Decimal(14, 2)
+  /// Assurance + frais (optionnel — certains prêts sont sans).
+  insurancePayment   Decimal? @db.Decimal(14, 2)
+  /// Mensualité totale (capital + intérêts + assurance).
+  totalPayment       Decimal  @db.Decimal(14, 2)
+
+  liability LiabilityAccount @relation(fields: [liabilityAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([liabilityAccountId, dueDate])
+  @@index([liabilityAccountId, dueDate])
+}
+
+enum ActionItemStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+model ActionItem {
+  id          String           @id @default(cuid())
+  title       String
+  description String?
+  status      ActionItemStatus @default(TODO)
+  dueDate     DateTime?
+  completedAt DateTime?
+  order       Int              @default(0)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([status, order])
+}

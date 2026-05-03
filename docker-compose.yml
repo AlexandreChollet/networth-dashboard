@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: networth-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dashboard}
+      POSTGRES_USER: ${POSTGRES_USER:-dashboard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dashboard}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dashboard} -d ${POSTGRES_DB:-dashboard}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  sidecar:
+    build: ./sidecar
+    container_name: networth-sidecar
+    restart: unless-stopped
+    environment:
+      CM_LOGIN: ${CM_LOGIN:-}
+      CM_PASSWORD: ${CM_PASSWORD:-}
+      CM_WEBSITE: ${CM_WEBSITE:-par}
+      WOOB_DEBUG: ${WOOB_DEBUG:-0}
+    ports:
+      # Bindé sur 127.0.0.1 — credentials CM jamais exposés au LAN.
+      - "127.0.0.1:8765:8000"
+    volumes:
+      # Persiste les sessions woob pour ne pas redéclencher la SCA à chaque restart.
+      - ./data/woob:/data/woob
