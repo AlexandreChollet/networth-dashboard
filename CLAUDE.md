@@ -28,7 +28,7 @@ Le service `sidecar` (Docker, Python + woob) expose `POST /sync/cm` sur `127.0.0
 2. `docker compose up -d --build sidecar` → premier build ~3 min (compile lxml, cryptography…).
 3. Lancer la 1re sync depuis la home → l'app CM Confirmation Mobile va te demander de valider. Les sessions woob persistent dans `./data/woob/` → la SCA n'est pas redéclenchée à chaque appel.
 4. Mapper les comptes : à la 1re sync, les comptes CM apparaissent comme « non mappés ». Pour chacun, ouvrir la fiche compte → Modifier → coller la clé externe + provider `creditmutuel`.
-5. La sync auto se déclenche au chargement de `/` si la dernière sync OK date de plus d'1h. Sinon affichage en cache instantané + bouton « Forcer ».
+5. La sync auto se déclenche au chargement de `/` si la dernière sync OK date de plus de 24h (le cron horaire côté VPS prend le relais avant). Sinon affichage en cache instantané + bouton « Forcer ».
 
 Modèle :
 - `Account.externalKey` (unique) + `Account.externalProvider` = mapping

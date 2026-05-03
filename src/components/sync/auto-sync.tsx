@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatDateTimeShort, formatEUR } from "@/lib/format";
 
-const STALE_AFTER_MS = 60 * 60 * 1000; // 1h
+const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // 24h
 
 interface LastSync {
   id: string;
